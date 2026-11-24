@@ -197,15 +197,14 @@ class ExerciseAgent:
     ) -> dict:
         """生成练习题"""
         system_prompt = self._get_system_prompt(knowledge_point, variant)
-        
-        user_prompt = f"请为「{knowledge_point}」知识点生成{count}道练习题。"
-        
-        if student_profile:
-            dims = student_profile.get("dimensions", {})
-            if dims:
-                weak_points = [k for k, v in dims.items() if v < 50]
-                if weak_points:
-                    user_prompt += f"\n学生薄弱点：{', '.join(weak_points)}，请适当加强相关内容。"
+
+        user_prompt = self._build_prompt(
+            knowledge_point=knowledge_point,
+            student_profile=student_profile,
+            exercise_type=exercise_type,
+            count=count,
+            variant=variant,
+        )
 
         messages = [{"role": "user", "content": user_prompt}]
 
@@ -228,6 +227,48 @@ class ExerciseAgent:
         except Exception as e:
             logger.error("生成练习题失败: %s", e)
             return {"exercises": []}
+
+    async def execute(self, state: dict) -> dict:
+        """从 AgentState 解包参数，调用 generate()（与其它子 Agent 统一接口）"""
+        params = state.get("intent_params", {}) or {}
+        return await self.generate(
+            knowledge_point=params.get("knowledge_point", "通用知识"),
+            student_profile=state.get("student_profile"),
+            exercise_type=params.get("exercise_type", "all"),
+            count=params.get("exercise_count", 5),
+            variant=params.get("variant", "mixed"),
+        )
+
+    def _build_prompt(
+        self,
+        knowledge_point: str,
+        student_profile: dict | None = None,
+        exercise_type: str = "all",
+        count: int = 3,
+        variant: str = "mixed",
+    ) -> str:
+        """构建练习题生成提示词（题型与数量生效，画像薄弱点使用 7 维结构）"""
+        prompt = f"请为「{knowledge_point}」知识点生成 {count} 道练习题。"
+
+        type_map = {
+            "choice": "全部为选择题",
+            "fill": "全部为填空题",
+            "coding": "全部为编程题",
+            "all": "混合题型（选择题、填空题、编程题等）",
+        }
+        prompt += f"\n题型要求：{type_map.get(exercise_type, '混合题型')}。"
+
+        if student_profile:
+            dims = student_profile.get("dimensions") or {}
+            weak_points = []
+            for name, value in dims.items():
+                score = value.get("score") if isinstance(value, dict) else value
+                if isinstance(score, (int, float)) and score < 50:
+                    weak_points.append(name)
+            if weak_points:
+                prompt += f"\n学生薄弱点：{', '.join(weak_points)}，请适当加强相关内容。"
+
+        return prompt
 
     def _filter_exercises(self, exercises: list, subject_type: str) -> list:
         """根据学科类型过滤题目"""

@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api import profile, tutor, chat, mindmap, dashboard, evaluation, auth, resource
 from app.api import admin
+from app.api import admin_exercises
 from app.api import wrong_questions
 from app.api import study_plan
 from app.core.config import settings
@@ -60,6 +61,7 @@ app.include_router(dashboard.router, prefix="/api/v1/dashboard", tags=["仪表�
 app.include_router(evaluation.router, prefix="/api/v1/evaluation", tags=["效果评估"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["认证"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["管理端"])
+app.include_router(admin_exercises.router, prefix="/api/v1/admin/exercises", tags=["管理端-题库"])
 app.include_router(resource.router, prefix="/api/v1/resource", tags=["资源生成"])
 app.include_router(wrong_questions.router, prefix="/api/v1/wrong-questions", tags=["错题本"])
 app.include_router(study_plan.router, prefix="/api/v1/study-plan", tags=["学习计划"])

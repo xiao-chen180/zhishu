@@ -8,6 +8,7 @@ N3 评分项：防止 LLM 生成虚假信息。
 
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from app.services.llm_factory import get_llm_client
 from app.services.json_parser import parse_json_response
 
@@ -32,10 +33,6 @@ class PatternDetector:
     """
 
     SUSPICIOUS_PATTERNS = [
-        # 虚假年份引用（仅匹配明显未来年份，2050+，避免误伤 2025-2049 的合理预测）
-        (r"据\s*20(?:5[0-9]|[6-9]\d)\s*年.*研究", "可能引用了未来年份的研究"),
-        (r"根据?\s*20(?:5[0-9]|[6-9]\d)\s*年.*发表", "可能引用了未来年份的论文"),
-
         # 虚假统计数据（仅匹配极端值 99%-100%）
         (r"(?:准确率|成功率|效率)\s*(?:达到了?|达到?|为)\s*(?:99\.?\d*|100)\s*%", "可能夸大了统计数据（99%+）"),
         (r"(?:超过|优于)\s*(?:99\.?\d*|100)\s*%", "可能夸大了比较数据（99%+）"),
@@ -44,14 +41,31 @@ class PatternDetector:
         (r"100%\s*(?:保证|正确|准确|有效)", "存在绝对化表述"),
     ]
 
+    # 引用某年份的某项研究成果（年份单独做动态判断，避免硬编码过时）
+    YEAR_REFERENCE_RE = re.compile(
+        r"(?:据|根据|参考)\s*(20\d{2})\s*年.{0,30}?(?:研究|发表|论文|报告|调查)"
+    )
+
+    # 允许引用到"当前年 + 1"（预印本/即将发表），更晚的年份视为可疑
+    FUTURE_YEAR_TOLERANCE = 1
+
     # 严重度等级赋值（仅用于严重模式）
     PATTERN_SEVERITY = {
-        "可能引用了未来年份的研究": 0.8,
-        "可能引用了未来年份的论文": 0.8,
+        "可能引用未发表/未来年份的研究": 0.8,
         "可能夸大了统计数据（99%+）": 0.5,
         "可能夸大了比较数据（99%+）": 0.5,
         "存在绝对化表述": 0.3,
     }
+
+    def _detect_future_year(self, content: str) -> int | None:
+        """返回内容中首个超出合理范围的年份，否则 None"""
+        current_year = datetime.now().year
+        allowed_max = current_year + self.FUTURE_YEAR_TOLERANCE
+        for match in self.YEAR_REFERENCE_RE.finditer(content):
+            year = int(match.group(1))
+            if year > allowed_max:
+                return year
+        return None
 
     def detect(self, content: str) -> ValidationResult:
         issues = []
@@ -60,6 +74,11 @@ class PatternDetector:
             if re.search(pattern, content):
                 issues.append(desc)
                 severity_sum += self.PATTERN_SEVERITY.get(desc, 0.5)
+
+        future_year = self._detect_future_year(content)
+        if future_year is not None:
+            issues.append(f"可能引用未发表/未来年份的研究（{future_year} 年）")
+            severity_sum += self.PATTERN_SEVERITY["可能引用未发表/未来年份的研究"]
 
         return ValidationResult(
             passed=len(issues) == 0,

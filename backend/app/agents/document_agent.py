@@ -147,10 +147,20 @@ class DocumentAgent:
         self,
         knowledge_point: str,
         student_profile: dict | None,
-        resource_type: str,
-        variant: str,
+        resource_type: str = "all",
+        variant: str = "deep",
     ) -> str:
         parts = [f"请为「{knowledge_point}」生成学习材料。"]
+
+        # 资源类型约束（此前参数被忽略）
+        if resource_type == "code":
+            parts.append("\n只生成代码示例（仅代码示例），附简明注释，不要长篇讲解。")
+        elif resource_type == "knowledge":
+            parts.append("\n只生成知识讲解，不需要代码示例。")
+        elif resource_type == "audio":
+            parts.append("\n重点生成适合朗读的音频脚本，讲解保持口语化。")
+        else:
+            parts.append("\n包含知识讲解、代码示例与音频脚本三部分。")
 
         if student_profile:
             dims = student_profile.get("dimensions", {})
@@ -182,12 +192,15 @@ class DocumentAgent:
         return "\n".join(parts)
 
     def _parse_response(self, content: str) -> dict:
-        """解析 LLM 返回的 JSON 内容"""
-        return parse_json_response(content, {
+        """解析 LLM 返回的 JSON 内容；非 JSON 时保留原文作为 knowledge"""
+        result = parse_json_response(content, {
             "knowledge": "",
             "code": "",
             "audio_script": "",
-})
+        })
+        if not result.get("knowledge") and content and content.strip():
+            result["knowledge"] = content.strip()
+        return result
 
 
 document_agent = DocumentAgent()

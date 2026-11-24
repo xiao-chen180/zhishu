@@ -150,6 +150,7 @@ TASK_TEMPLATES: dict[str, list[dict[str, Any]]] = {
         {"agent": "document_agent", "action": "generate", "priority": "high", "status": "pending"},
         {"agent": "mindmap_agent", "action": "generate", "priority": "medium", "status": "pending"},
         {"agent": "exercise_agent", "action": "generate", "priority": "medium", "status": "pending"},
+        {"agent": "audio_agent", "action": "generate", "priority": "low", "status": "pending"},
     ],
     "multi_chat": [
         {"agent": "tutor_agent", "action": "answer", "priority": "low", "status": "pending"}
