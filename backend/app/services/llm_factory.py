@@ -38,6 +38,14 @@ def get_llm_client():
             base_url=settings.SPARK_BASE_URL,
         )
         logger.info("LLM provider: spark (%s)", settings.SPARK_BASE_URL)
+    elif provider == "ark":
+        from app.services.ark_client import ArkClient
+        _client = ArkClient(
+            api_key=settings.ARK_API_KEY,
+            base_url=settings.ARK_BASE_URL,
+            model=settings.ARK_MODEL,
+        )
+        logger.info("LLM provider: ark (%s)", settings.ARK_BASE_URL)
     elif provider == "mimo":
         from app.services.mimo_client import MiMoClient
         _client = MiMoClient(

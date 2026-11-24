@@ -1,10 +1,11 @@
 import logging
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 
 logger = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="allow")
     PROJECT_NAME: str = "智枢(SmartHub)"
     VERSION: str = "1.0.0"
 
@@ -21,13 +22,18 @@ class Settings(BaseSettings):
     MIMO_BASE_URL: str = "https://token-plan-cn.xiaomimimo.com/v1"
     MIMO_MODEL: str = "mimo-v2.5-pro"
 
+    # 火山方舟 (Volcengine Ark，OpenAI 兼容，Bearer 认证)
+    ARK_API_KEY: str = ""
+    ARK_BASE_URL: str = "https://ark.cn-beijing.volces.com/api/plan/v3"
+    ARK_MODEL: str = "ark-code-latest"
+
     # 讯飞星火 V4 (上线前切换)
     SPARK_API_KEY: str = ""
     SPARK_BASE_URL: str = "https://spark-api-open.xf-yun.com/v1"
     SPARK_MODEL: str = "Spark-V4"
 
-    # LLM 选择: "minimax" / "spark" / "mimo"
-    LLM_PROVIDER: str = "mimo"
+    # LLM 选择: "minimax" / "spark" / "mimo" / "ark"
+    LLM_PROVIDER: str = "ark"
 
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
 
@@ -35,10 +41,6 @@ class Settings(BaseSettings):
     JWT_SECRET: str = ""
 
     DEBUG: bool = False
-
-    class Config:
-        env_file = ".env"
-        extra = "allow"
 
 
 settings = Settings()
