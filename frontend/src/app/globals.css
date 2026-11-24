@@ -77,7 +77,7 @@ code, .mono { font-family: 'JetBrains Mono', monospace; font-weight: 400; }
 ::-webkit-scrollbar-thumb:hover { background: var(--ink-3); }
 
 /* ═══ APP SHELL ═══ */
-.app{display:flex;height:100vh}
+.app{display:flex;height:100vh;min-height:0}
 
 /* ═══ SIDEBAR ═══ */
 .sidebar{width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;flex-shrink:0;position:relative;z-index:20}
@@ -5352,4 +5352,56 @@ body:has(.login-page){
 .short-answer-input:disabled {
   background: var(--surface);
   cursor: not-allowed;
+}
+
+/* ═══ 响应式：控制台打开时自适应 ═══ */
+@media (max-height: 700px) {
+  .content {
+    padding: 16px 20px 24px;
+  }
+}
+
+@media (max-height: 600px) {
+  .content {
+    padding: 12px 16px 20px;
+  }
+
+  .content-header h1,
+  .content-header h2 {
+    font-size: 18px;
+  }
+}
+
+@media (max-height: 500px) {
+  .app {
+    height: 100vh;
+    min-height: 0;
+  }
+
+  .content {
+    padding: 10px 12px 16px;
+    overflow-y: auto;
+  }
+
+  .sidebar {
+    display: none;
+  }
+}
+
+/* 通用卡片/容器响应式 */
+@media (max-height: 600px) {
+  .stat-card,
+  .card {
+    padding: 12px;
+  }
+
+  .stat-card .stat-value,
+  .stat-card h3 {
+    font-size: 20px;
+  }
+
+  .stat-card .stat-label,
+  .stat-card p {
+    font-size: 11px;
+  }
 }
