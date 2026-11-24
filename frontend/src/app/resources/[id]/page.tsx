@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation'
 import Icon from '@/components/Icon'
 import { resourceApi } from '@/lib/api'
 import { getStudentId } from '@/lib/student'
+import { sanitizeHtml } from '@/lib/sanitize'
 import type { ResourceItem } from '@/app/resources/types'
 
 export default function ResourceDetailPage() {
@@ -105,7 +106,7 @@ export default function ResourceDetailPage() {
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
         .replace(/`(.*?)`/g, '<code>$1</code>')
-      return <p key={i} dangerouslySetInnerHTML={{ __html: processed }} />
+      return <p key={i} dangerouslySetInnerHTML={{ __html: sanitizeHtml(processed) }} />
     })
   }
 

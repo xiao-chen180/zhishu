@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import { resourceApi, evaluationApi, profileApi } from '@/lib/api'
 import { getStudentId } from '@/lib/student'
 import { markdownToHtml } from '@/lib/markdown'
+import { sanitizeHtml, sanitizeSvg } from '@/lib/sanitize'
 import { usePhaseGeneration } from '../hooks/usePhaseGeneration'
 import Icon from '@/components/Icon'
 import type { PhaseType, LearningPackage } from '../types'
@@ -30,12 +31,13 @@ function MermaidDiagram({ code, id }: { code: string; id: string }) {
       if (!mermaid || cancelled || !ref.current) return
       try {
         const { svg: result } = await mermaid.render(`lp-mm-${id}`, code)
-        if (!cancelled) setSvg(result)
+        if (!cancelled) setSvg(sanitizeSvg(result))
       } catch { /* 渲染失败 */ }
     }
     render()
     return () => { cancelled = true }
   }, [code, id])
+  // svg 已在 setSvg 时经 sanitizeSvg 消毒
   return svg ? <div dangerouslySetInnerHTML={{ __html: svg }} /> : <pre>{code}</pre>
 }
 
@@ -219,7 +221,7 @@ export default function LearningPage({ knowledge_point }: { knowledge_point: str
             <h3><Icon name="clipboard" size={20} /> 总结卡片</h3>
             <div
               className="lp-text"
-              dangerouslySetInnerHTML={{ __html: String(summary.content ?? '').replace(/\n/g, '<br>') }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(String(summary.content ?? '').replace(/\n/g, '<br>')) }}
             />
           </div>
         )}

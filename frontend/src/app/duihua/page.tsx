@@ -5,6 +5,7 @@ import { chatApi, profileApi, evaluationApi, type StudentProfile } from '@/lib/a
 import { getStudentId } from '@/lib/student'
 import { escapeHtml, extractAnswer } from '@/lib/utils'
 import { markdownToHtml } from '@/lib/markdown'
+import { sanitizeHtml, sanitizeSvg } from '@/lib/sanitize'
 import { usePageTimer } from '@/hooks/usePageTimer'
 import Icon from '@/components/Icon'
 
@@ -32,8 +33,9 @@ function MermaidDiagram({ code, id }: { code: string; id: string }) {
       if (!mermaid || cancelled || !ref.current) return
       try {
         const { svg: result } = await mermaid.render(`mermaid-${id}`, code)
-        if (!cancelled) setSvg(result)
+        if (!cancelled) setSvg(sanitizeSvg(result))
       } catch {
+        // escapeHtml 已转义，内容安全
         if (!cancelled) setSvg(`<pre style="color:red;font-size:12px">${escapeHtml(code)}</pre>`)
       }
     }
@@ -41,6 +43,7 @@ function MermaidDiagram({ code, id }: { code: string; id: string }) {
     return () => { cancelled = true }
   }, [code, id])
 
+  // svg 状态在 setSvg 时已消毒（成功走 sanitizeSvg，失败走 escapeHtml）
   return <div ref={ref} dangerouslySetInnerHTML={{ __html: svg }} style={{ overflow: 'auto', margin: '8px 0' }} />
 }
 
@@ -540,7 +543,7 @@ export default function DuihuaPage() {
                     <MermaidDiagram code={mermaidMatch![1]} id={`msg-${i}`} />
                   </>
                 ) : (
-                  <div dangerouslySetInnerHTML={{ __html: msg.rendered ? msg.content : markdownToHtml(msg.content) }} />
+                  <div dangerouslySetInnerHTML={{ __html: msg.rendered ? sanitizeHtml(msg.content) : markdownToHtml(msg.content) }} />
                 )}
                 {msg.role === 'assistant' && msg.content && (
                   <div className="msg-actions" style={{ display: 'flex', gap: 2, marginTop: 8 }}

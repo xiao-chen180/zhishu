@@ -1,6 +1,6 @@
 // 智枢 API 客户端
-// 开发环境直连后端 8001（CORS 已在后端配置 localhost:3000）
-const BASE_URL = 'http://localhost:8001/api/v1'
+// 后端地址可通过 NEXT_PUBLIC_API_BASE 配置（构建期注入），默认本地 8001
+export const BASE_URL = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8001/api/v1'
 
 import type { Resource, ResourceContent, Exercise, WrongQuestion, WrongQuestionStats } from '@/types'
 export type { Resource, ResourceContent, Exercise, WrongQuestion, WrongQuestionStats }
@@ -192,7 +192,8 @@ export const chatApi = {
     onEvent: (e: ChatEvent) => void,
     opts?: { session_id?: string; course_topics?: string[] }
   ): () => void {
-    return createEventStream(`${BASE_URL}/chat/stream`, { student_id, message, ...opts }, onEvent)
+    // 对话会写入消息，禁止自动重试（重试会产生重复消息）
+    return createEventStream(`${BASE_URL}/chat/stream`, { student_id, message, ...opts }, onEvent, { retry: false })
   },
 
   getSessions: (student_id: string) =>
@@ -231,7 +232,13 @@ export const exerciseApi = {
     count = 5,
     exercise_type = 'all'
   ): () => void {
-    return createEventStream(`${BASE_URL}/resource/exercises/generate/stream`, { student_id, knowledge_point, count, exercise_type }, onEvent)
+    // 生成类接口：禁止自动重试，避免重复生成题目、重复消耗额度
+    return createEventStream(
+      `${BASE_URL}/resource/exercises/generate/stream`,
+      { student_id, knowledge_point, count, exercise_type },
+      onEvent,
+      { retry: false },
+    )
   },
   generate: (
     student_id: string,
@@ -593,6 +600,7 @@ export const wrongQuestionsApi = {
     let cancel: (() => void) | null = null
     let settled = false
 
+    // 分析类接口：禁止自动重试
     cancel = createEventStream(`${BASE_URL}/wrong-questions/${id}/analyze/stream`, {}, (e) => {
       onEvent(e)
       if (settled) return
@@ -605,7 +613,7 @@ export const wrongQuestionsApi = {
         reject(new Error(e.message || '分析失败'))
         cancel?.()
       }
-    })
+    }, { retry: false })
 
     setTimeout(() => {
       if (!settled) {

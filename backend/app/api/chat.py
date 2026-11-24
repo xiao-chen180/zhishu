@@ -497,8 +497,9 @@ async def stream_chat(req: ChatRequest, db: AsyncSession = Depends(get_db), user
             generated_title = title_response.get("content", "").strip().strip('"').strip("'")
             if generated_title and len(generated_title) <= 20:
                 title = generated_title
-        except Exception:
-            pass
+        except Exception as e:
+            # 标题生成失败不影响主流程，用默认标题兜底
+            logger.warning("会话标题生成失败，使用默认标题: %s", e)
 
         session = ChatSession(
             id=uuid.uuid4(),

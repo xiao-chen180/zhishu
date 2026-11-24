@@ -5,13 +5,14 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
+from app.core.rate_limit import login_limiter, send_code_limiter
 from app.core.security import hash_password, verify_password, create_token, create_refresh_token
 from app.models.student import Student
 
@@ -161,7 +162,13 @@ def _to_dto(s: Student) -> StudentDTO:
 
 
 @router.post("/login", response_model=AuthResponse)
-async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(req: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    # 防暴力破解：同一 IP + 学号 5 分钟内最多 10 次
+    client_ip = request.client.host if request.client else "unknown"
+    limit_key = f"login:{client_ip}:{req.student_no}"
+    if not login_limiter.allow(limit_key):
+        raise HTTPException(status_code=429, detail="尝试过于频繁，请 5 分钟后再试")
+
     result = await db.execute(
         select(Student).where(Student.student_no == req.student_no)
     )
@@ -178,6 +185,9 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     student.last_login = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(student)
+
+    # 登录成功，清除该 key 的失败计数
+    login_limiter.reset(limit_key)
 
     token = create_token(str(student.id))
     refresh = create_refresh_token(str(student.id))
@@ -218,8 +228,13 @@ class VerifyCodeRequest(BaseModel):
 
 
 @router.post("/send-code")
-async def send_code(req: SendCodeRequest):
+async def send_code(req: SendCodeRequest, request: Request):
     """发送验证码（模拟：打印到控制台）"""
+    # 防短信轰炸：同一 IP + 手机号 5 分钟内最多 3 次
+    client_ip = request.client.host if request.client else "unknown"
+    if not send_code_limiter.allow(f"code:{client_ip}:{req.phone}"):
+        raise HTTPException(status_code=429, detail="验证码发送过于频繁，请 5 分钟后再试")
+
     code = f"{random.randint(0, 999999):06d}"
     _verification_codes[req.phone] = (code, time.time() + CODE_TTL)
     print(f"\n{'='*40}")

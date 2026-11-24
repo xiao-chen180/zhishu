@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { tutorApi, evaluationApi, type EvaluationReport } from '@/lib/api'
 import { getStudentId } from '@/lib/student'
 import { showToast } from '@/lib/utils'
+import { sanitizeHtml } from '@/lib/sanitize'
 import RobotIcon from '@/components/RobotIcon'
 import { usePageTimer } from '@/hooks/usePageTimer'
 import Icon from '@/components/Icon'
@@ -637,7 +638,7 @@ export default function PingguPage() {
                 <div key={i} className="record-item">
                   <span className="ri-time">{r.time}</span>
                   <div className="ri-icon" style={{ background: r.bg, color: r.color }}>{r.icon}</div>
-                  <span className="ri-text" dangerouslySetInnerHTML={{ __html: r.text }} />
+                  <span className="ri-text" dangerouslySetInnerHTML={{ __html: sanitizeHtml(r.text) }} />
                   {r.score ? (
                     <span className="ri-score" style={{ color: scoreColor(+r.score) }}>{r.score}</span>
                   ) : (

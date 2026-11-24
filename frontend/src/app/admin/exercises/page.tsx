@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react'
 import { useAdmin } from '@/lib/admin/context'
 import { AdminCheckbox, BatchDeleteBar, useSelection } from '@/lib/admin/components'
 
-const BASE = 'http://localhost:8001/api/v1'
+const BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8001/api/v1'
 
 interface BankExercise {
   id: string
