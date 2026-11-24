@@ -17,10 +17,11 @@ class TestMindMapAgent:
         assert "JSON" in prompt
 
     def test_build_prompt_with_profile(self):
-        profile = {"knowledge_mastery": {"A* 算法": 20}, "weak_topics": ["A* 算法"]}
+        # 7 维画像结构：knowledge_base.score < 50 时提示简化层级
+        profile = {"dimensions": {"knowledge_base": {"score": 20, "confidence": 0.6}}}
         prompt = self.agent._build_prompt("A* 算法", profile)
-        assert "薄弱点" in prompt
         assert "基础较弱" in prompt
+        assert "层级不超过3层" in prompt
 
     def test_validate_mermaid_clean(self):
         code = "mindmap\n  root((中心))\n    分支1"

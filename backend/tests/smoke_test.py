@@ -1,30 +1,32 @@
-"""端到端冒烟测试 — 6 步演示路径
+"""端到端冒烟测试 — 核心演示路径
 
 跑法: cd backend && python -m tests.smoke_test
+账号: 默认 admin / admin123（可用环境变量 SMOKE_STUDENT_NO / SMOKE_PASSWORD 覆盖）
 输出: 每步 PASS/FAIL + 关键数据 + 错误信息
+
+注意: 本模块会被 pytest 收集，所以不能在任何导入时修改 sys.stdout，
+UTF-8 包装只在 __main__ 里执行。
 """
 
 import asyncio
 import io
 import json
+import os
 import sys
 import time
-from typing import Any
 
 import httpx
 
-# Force UTF-8 stdout to survive Windows GBK terminal + emojis in LLM output
-if sys.platform == "win32":
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
-
 BASE = "http://localhost:8001/api/v1"
-STUDENT_ID = "00000000-0000-0000-0000-000000000001"
-TIMEOUT = 120.0
+TIMEOUT = 180.0
 
 PASS = "[PASS]"
 FAIL = "[FAIL]"
 INFO = "[INFO]"
+
+# 登录后填充
+TOKEN: str = ""
+STUDENT_ID: str = ""
 
 
 class StepFailed(Exception):
@@ -50,15 +52,20 @@ def info(msg: str) -> None:
     print(f"  {INFO} {msg}")
 
 
+def auth_headers() -> dict:
+    return {"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}
+
+
 async def collect_sse_events(client: httpx.AsyncClient, path: str, payload: dict, hard_cap_events: int = 20000) -> list[dict]:
     """发起 SSE 请求并解析所有事件 (有硬上限避免 LLM 抽风卡死)"""
     events: list[dict] = []
     t0 = time.time()
+    headers = {"Accept": "text/event-stream", **auth_headers()}
     async with client.stream(
         "POST",
         f"{BASE}{path}",
         json=payload,
-        headers={"Accept": "text/event-stream"},
+        headers=headers,
         timeout=TIMEOUT,
     ) as resp:
         if resp.status_code != 200:
@@ -79,7 +86,7 @@ async def collect_sse_events(client: httpx.AsyncClient, path: str, payload: dict
     return events
 
 
-async def step1_health(client: httpx.AsyncClient) -> None:
+async def step0_health(client: httpx.AsyncClient) -> None:
     header("Step 0: Health Check")
     r = await client.get("http://localhost:8001/health", timeout=5)
     if r.status_code == 200 and r.json().get("status") == "healthy":
@@ -88,40 +95,51 @@ async def step1_health(client: httpx.AsyncClient) -> None:
         bad(f"/health {r.status_code}: {r.text[:200]}")
 
 
-async def step2_profile_build(client: httpx.AsyncClient) -> dict | None:
-    header("Step 1: F1 Profile Build (POST /profile/build)")
-    payload = {
-        "student_id": STUDENT_ID,
-        "messages": [
-            {"role": "user", "content": "我是一名计算机专业大三学生,想学 AI 导论"},
-            {"role": "assistant", "content": "好的,请问你的数学基础如何?"},
-            {"role": "user", "content": "高数线代都学过,概率统计基础一般"},
-        ],
-    }
-    t0 = time.time()
-    r = await client.post(f"{BASE}/profile/build", json=payload, timeout=TIMEOUT)
-    dur = time.time() - t0
-
+async def step_login(client: httpx.AsyncClient) -> None:
+    global TOKEN, STUDENT_ID
+    header("Step 1: Login (POST /auth/login)")
+    student_no = os.getenv("SMOKE_STUDENT_NO", "admin")
+    password = os.getenv("SMOKE_PASSWORD", "admin123")
+    r = await client.post(f"{BASE}/auth/login", json={"student_no": student_no, "password": password}, timeout=15)
     if r.status_code != 200:
-        bad(f"HTTP {r.status_code} in {dur:.1f}s: {r.text[:300]}")
-        return None
-
+        bad(f"HTTP {r.status_code}: {r.text[:200]}")
     data = r.json()
-    dims = data.get("dimensions", {})
-    km = dims.get("knowledge_mastery", {})
-    info(f"completeness={data.get('completeness_score')}%")
-    info(f"dimensions keys: {list(dims.keys())}")
-    info(f"knowledge_mastery: {km}")
-    ok(f"200 in {dur:.1f}s, {len(dims)} dimensions")
-    return data
+    TOKEN = data.get("token", "")
+    STUDENT_ID = data.get("student", {}).get("id", "")
+    if not TOKEN or not STUDENT_ID:
+        bad("登录响应缺少 token/student.id")
+    info(f"student_no={student_no}, id={STUDENT_ID[:8]}..., token 长度={len(TOKEN)}")
+    ok("登录成功，后续请求将携带 Authorization")
 
 
-async def step3_chat_stream(client: httpx.AsyncClient) -> None:
-    header("Step 2: F4 Chat Stream (POST /chat/stream) - 真逐 token")
-    payload = {
-        "student_id": STUDENT_ID,
-        "message": "什么是反向传播算法?",
-    }
+async def step_profile_assess_stream(client: httpx.AsyncClient) -> None:
+    header("Step 2: F1 对话式画像 (POST /profile/assess/stream)")
+    t0 = time.time()
+    try:
+        events = await collect_sse_events(client, "/profile/assess/stream", {})
+    except Exception as e:
+        bad(f"SSE error in {time.time()-t0:.1f}s: {e}")
+        return
+
+    dur = time.time() - t0
+    types = [e.get("type") for e in events]
+    tokens = [e for e in events if e.get("type") == "token"]
+    errors = [e for e in events if e.get("type") == "error"]
+    dones = [e for e in events if e.get("type") == "done"]
+    info(f"events: {len(events)}, types={dict((t, types.count(t)) for t in set(types))}")
+    info(f"tokens: {len(tokens)} ({sum(len(t.get('content','')) for t in tokens)} chars)")
+    if errors:
+        bad(f"server error: {errors[0].get('message', '?')[:200]}")
+    if not tokens:
+        bad("no token events (画像对话未返回内容)")
+    if not dones:
+        bad("no done event (stream 未正常结束)")
+    ok(f"SSE 200 in {dur:.1f}s, {len(tokens)} tokens")
+
+
+async def step_chat_stream(client: httpx.AsyncClient) -> None:
+    header("Step 3: F4 对话流式 (POST /chat/stream) — 真逐 token")
+    payload = {"student_id": STUDENT_ID, "message": "什么是反向传播算法?"}
     t0 = time.time()
     try:
         events = await collect_sse_events(client, "/chat/stream", payload)
@@ -135,73 +153,47 @@ async def step3_chat_stream(client: httpx.AsyncClient) -> None:
     results = [e for e in events if e.get("type") == "result"]
     errors = [e for e in events if e.get("type") == "error"]
     dones = [e for e in events if e.get("type") == "done"]
-
-    info(f"events: {len(events)} total, types={dict((t, types.count(t)) for t in set(types))}")
-    info(f"tokens received: {len(tokens)} ({sum(len(t.get('content','')) for t in tokens)} chars)")
-    info(f"session: {events[0].get('session_id', '?')[:8] if events and events[0].get('type')=='session' else 'N/A'}")
-    if tokens:
-        info(f"first 3 tokens: {[t.get('content','')[:30] for t in tokens[:3]]}")
+    info(f"events: {len(events)}, types={dict((t, types.count(t)) for t in set(types))}")
+    info(f"tokens: {len(tokens)} ({sum(len(t.get('content','')) for t in tokens)} chars)")
     if errors:
         bad(f"server reported error: {errors[0].get('message', '?')[:200]}")
-        return
     if not tokens:
         bad("no token events received (不是真流式!)")
-        return
     if not dones:
         bad("no done event (stream didn't close cleanly)")
-        return
     ok(f"SSE stream 200 in {dur:.1f}s, {len(tokens)} tokens, {len(results)} result(s)")
 
 
-async def step6_path_stream(client: httpx.AsyncClient) -> None:
-    header("Step 5: F3 Path Stream (POST /path/generate/stream)")
-    payload = {
-        "student_id": STUDENT_ID,
-        "course_topics": ["机器学习", "深度学习", "自然语言处理"],
-        "total_days": 14,
-    }
+async def step_generate_path(client: httpx.AsyncClient) -> None:
+    header("Step 4: F3 学习路径生成 (POST /study-plan/generate-path)")
+    payload = {"target_knowledge": "机器学习", "current_level": "beginner"}
     t0 = time.time()
-    try:
-        events = await collect_sse_events(client, "/path/generate/stream", payload)
-    except Exception as e:
-        bad(f"SSE error in {time.time()-t0:.1f}s: {e}")
-        return
-
+    r = await client.post(f"{BASE}/study-plan/generate-path", json=payload, headers=auth_headers(), timeout=TIMEOUT)
     dur = time.time() - t0
-    tokens = [e for e in events if e.get("type") == "token"]
-    results = [e for e in events if e.get("type") == "result"]
-    progress = [e for e in events if e.get("type") == "progress"]
-
-    info(f"token events: {len(tokens)}")
-    if results:
-        rd = results[0].get("data", {})
-        info(f"path_id: {rd.get('path_id', '?')[:8]}")
-        info(f"title: {rd.get('title', '?')}")
-        info(f"nodes: {len(rd.get('nodes', []))}, edges: {len(rd.get('edges', []))}, days: {rd.get('total_days')}")
-    if not results:
-        bad("no result event (path not saved)")
-        return
-    ok(f"SSE stream 200 in {dur:.1f}s, path saved, {len(tokens)} tokens")
+    if r.status_code != 200:
+        bad(f"HTTP {r.status_code} in {dur:.1f}s: {r.text[:300]}")
+    data = r.json().get("data", {}) or {}
+    nodes = data.get("nodes", [])
+    if not nodes:
+        bad("路径生成结果缺少 nodes")
+    info(f"path id: {data.get('id', '?')[:8]}, name: {data.get('name', '?')}")
+    info(f"nodes: {len(nodes)}, edges: {len(data.get('edges', [])) if isinstance(data.get('edges'), list) else 'n/a'}")
+    ok(f"200 in {dur:.1f}s, {len(nodes)} nodes")
 
 
-async def step7_dashboard(client: httpx.AsyncClient) -> None:
-    header("Step 6: Dashboard Stats (GET /dashboard/stats)")
-    r = await client.get(f"{BASE}/dashboard/stats", params={"student_id": STUDENT_ID}, timeout=10)
+async def step_dashboard(client: httpx.AsyncClient) -> None:
+    header("Step 5: Dashboard Stats (GET /dashboard/stats)")
+    r = await client.get(f"{BASE}/dashboard/stats", params={"student_id": STUDENT_ID}, headers=auth_headers(), timeout=15)
     if r.status_code != 200:
         bad(f"HTTP {r.status_code}: {r.text[:200]}")
-        return
     data = r.json()
-    info(f"knowledge_points={data.get('knowledge_points')}")
-    info(f"learning_hours={data.get('learning_hours')}")
-    info(f"accuracy={data.get('accuracy')}")
-    info(f"path_progress={data.get('path_progress')}")
-    info(f"recent_activities: {len(data.get('recent_activities', []))}")
-    info(f"recent_chats: {len(data.get('recent_chats', []))}")
+    for field in ("knowledge_points", "learning_hours", "accuracy", "path_progress"):
+        info(f"{field}={data.get(field)}")
     ok("dashboard 200 with real data")
 
 
-async def step8_evaluation_record(client: httpx.AsyncClient) -> None:
-    header("Step 7: F5 Evaluation Record (POST /evaluation/record)")
+async def step_evaluation_record(client: httpx.AsyncClient) -> None:
+    header("Step 6: F5 学习行为记录 (POST /evaluation/record)")
     payload = {
         "student_id": STUDENT_ID,
         "action": "view",
@@ -209,31 +201,26 @@ async def step8_evaluation_record(client: httpx.AsyncClient) -> None:
         "knowledge_point": "卷积神经网络 CNN",
         "duration_seconds": 120,
     }
-    r = await client.post(f"{BASE}/evaluation/record", json=payload, timeout=10)
+    r = await client.post(f"{BASE}/evaluation/record", json=payload, headers=auth_headers(), timeout=15)
     if r.status_code != 200:
         bad(f"HTTP {r.status_code}: {r.text[:200]}")
-        return
     data = r.json()
-    ok(f"record saved, id={data.get('record_id', '?')[:8]}")
+    ok(f"record saved, id={str(data.get('record_id', '?'))[:8]}")
 
 
-async def step9_mindmap(client: httpx.AsyncClient) -> None:
-    header("Step 8: F2 MindMap (POST /mindmap/generate)")
-    payload = {
-        "student_id": STUDENT_ID,
-        "knowledge_point": "Transformer 架构",
-    }
+async def step_mindmap(client: httpx.AsyncClient) -> None:
+    header("Step 7: F2 思维导图 (POST /mindmap/generate)")
+    payload = {"student_id": STUDENT_ID, "knowledge_point": "Transformer 架构"}
     t0 = time.time()
-    r = await client.post(f"{BASE}/mindmap/generate", json=payload, timeout=TIMEOUT)
+    r = await client.post(f"{BASE}/mindmap/generate", json=payload, headers=auth_headers(), timeout=TIMEOUT)
     dur = time.time() - t0
     if r.status_code != 200:
         bad(f"HTTP {r.status_code} in {dur:.1f}s: {r.text[:300]}")
-        return
     data = r.json()
-    mindmap = data.get("mindmap", {})
+    mindmap = data.get("mindmap", {}) or {}
+    mm = mindmap.get("mermaid_code", "")
     if not mindmap:
         bad("response body missing 'mindmap' key")
-    mm = mindmap.get("mermaid_code", "")
     info(f"title: {mindmap.get('title', '?')}")
     info(f"mermaid_code length: {len(mm)} chars")
     if not mm:
@@ -246,19 +233,19 @@ async def main() -> int:
     print("=" * 70)
     print(f"  智枢 (SmartHub) 端到端冒烟测试 — {time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"  Backend: {BASE}")
-    print(f"  Student: {STUDENT_ID}")
     print("=" * 70)
 
     async with httpx.AsyncClient() as client:
         results: dict[str, bool] = {}
         steps = [
-            ("0.health", step1_health),
-            ("1.profile_build", step2_profile_build),
-            ("2.chat_stream", step3_chat_stream),
-            ("3.path_stream", step6_path_stream),
-            ("4.mindmap", step9_mindmap),
-            ("5.dashboard", step7_dashboard),
-            ("6.evaluation_record", step8_evaluation_record),
+            ("0.health", step0_health),
+            ("1.login", step_login),
+            ("2.profile_assess", step_profile_assess_stream),
+            ("3.chat_stream", step_chat_stream),
+            ("4.generate_path", step_generate_path),
+            ("5.dashboard", step_dashboard),
+            ("6.evaluation_record", step_evaluation_record),
+            ("7.mindmap", step_mindmap),
         ]
 
         for name, fn in steps:
@@ -285,5 +272,12 @@ async def main() -> int:
     return 0 if passed == total else 1
 
 
+def _force_utf8_stdout() -> None:
+    if sys.platform == "win32":
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
+
 if __name__ == "__main__":
+    _force_utf8_stdout()
     sys.exit(asyncio.run(main()))

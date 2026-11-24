@@ -82,9 +82,10 @@ class TestMasterAgentGraph:
 
     def test_quick_route_tutor(self):
         from app.agents.master_agent import _quick_route
-        assert _quick_route("\u8bb2\u89e3\u4e00\u4e0b\u8ba1\u7b97\u7a0b\u5e8f") == "tutor"
+        # "\u8bb2\u89e3/\u89e3\u91ca" \u5c5e\u4e8e document \u610f\u56fe\uff1btutor \u5173\u952e\u8bcd\u4e3a \u4e3a\u4ec0\u4e48/\u662f\u4ec0\u4e48/\u539f\u7406/\u533a\u522b \u7b49
         assert _quick_route("\u4e3a\u4ec0\u4e48\u673a\u5668\u5b66\u4e60\u8fd9\u4e48\u706b") == "tutor"
         assert _quick_route("\u662f\u4ec0\u4e48\u662f\u68af\u5ea6\u4e0b\u964d") == "tutor"
+        assert _quick_route("\u8bb2\u89e3\u4e00\u4e0b\u8ba1\u7b97\u7a0b\u5e8f") == "document"
 
     def test_quick_route_compound_priority(self):
         """复合意图必须在单一意图之前匹配"""
