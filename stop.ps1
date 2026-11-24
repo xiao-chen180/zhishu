@@ -30,6 +30,22 @@ if (Test-Path $PidFile) {
             Write-Host "  ⚠️ 前端 PID $($pids.frontend) 不存在（可能已退）" -ForegroundColor Yellow
         }
     }
+    if ($pids.celery_worker) {
+        try {
+            Stop-Process -Id $pids.celery_worker -Force -ErrorAction Stop
+            Write-Host "  ✅ 停止 Celery worker PID $($pids.celery_worker)" -ForegroundColor Green
+        } catch {
+            Write-Host "  ⚠️ Celery worker PID $($pids.celery_worker) 不存在（可能已退）" -ForegroundColor Yellow
+        }
+    }
+    if ($pids.celery_beat) {
+        try {
+            Stop-Process -Id $pids.celery_beat -Force -ErrorAction Stop
+            Write-Host "  ✅ 停止 Celery beat PID $($pids.celery_beat)" -ForegroundColor Green
+        } catch {
+            Write-Host "  ⚠️ Celery beat PID $($pids.celery_beat) 不存在（可能已退）" -ForegroundColor Yellow
+        }
+    }
     Remove-Item $PidFile -Force
     Start-Sleep -Seconds 1
 } else {

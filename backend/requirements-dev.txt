@@ -1,0 +1,5 @@
+# 开发/测试依赖（不用于生产）
+# 安装: pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements-dev.txt
+-r requirements.txt
+pytest>=8.0
+pytest-asyncio>=0.23

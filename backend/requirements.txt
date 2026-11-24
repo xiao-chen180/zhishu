@@ -9,7 +9,8 @@ fastapi==0.136.3
 uvicorn[standard]==0.49.0
 sqlalchemy==2.0.50
 asyncpg==0.31.0
-redis==8.0.0
+# 本机 Redis 3.0 不兼容 RESP3 HELLO，固定 4.6.x（兼容 Celery 与旧 Redis）
+redis==4.6.0
 celery==5.6.3
 python-dotenv==1.2.2
 pydantic==2.13.4

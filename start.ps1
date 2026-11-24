@@ -123,10 +123,31 @@ $frontendProc = Start-Process -FilePath $nextExe `
 
 Write-Host "  前端 PID: $($frontendProc.Id)" -ForegroundColor Green
 
+# 2.5 启动 Celery worker + beat（定时评估报告依赖 Redis）
+Write-Host "[2.5/4] 启动 Celery worker + beat..." -ForegroundColor Cyan
+$celeryArgs = @('-m','celery','-A','app.core.celery_config:celery_app')
+$celeryWorkerProc = Start-Process -FilePath $backendExe `
+    -ArgumentList ($celeryArgs + @('worker','--pool=solo','--loglevel=info')) `
+    -WorkingDirectory $BackendDir `
+    -RedirectStandardOutput (Join-Path $LogDir 'celery.log') `
+    -RedirectStandardError (Join-Path $LogDir 'celery.err.log') `
+    -WindowStyle Hidden `
+    -PassThru
+$celeryBeatProc = Start-Process -FilePath $backendExe `
+    -ArgumentList ($celeryArgs + @('beat','--loglevel=info')) `
+    -WorkingDirectory $BackendDir `
+    -RedirectStandardOutput (Join-Path $LogDir 'celerybeat.log') `
+    -RedirectStandardError (Join-Path $LogDir 'celerybeat.err.log') `
+    -WindowStyle Hidden `
+    -PassThru
+Write-Host "  Celery worker PID: $($celeryWorkerProc.Id) / beat PID: $($celeryBeatProc.Id)" -ForegroundColor Green
+
 # 3. 记录 PID
 @{
     backend = $backendProc.Id
     frontend = $frontendProc.Id
+    celery_worker = $celeryWorkerProc.Id
+    celery_beat = $celeryBeatProc.Id
     mode = if ($Dev) { 'dev' } else { 'prod' }
     started_at = (Get-Date).ToString('o')
 } | ConvertTo-Json | Set-Content -Path $PidFile

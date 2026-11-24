@@ -7,6 +7,8 @@ celery_app = Celery(
     "zhishu",
     broker="redis://localhost:6379/0",
     backend="redis://localhost:6379/1",
+    # 显式加载定时任务模块（autodiscover 只覆盖 app.tasks 包本身）
+    include=["app.tasks.evaluation_tasks"],
 )
 
 celery_app.conf.update(
